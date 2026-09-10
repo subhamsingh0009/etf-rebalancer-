@@ -1,0 +1,1090 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ETF Portfolio Rebalancer (65:35)</title>
+<style>
+    * { box-sizing: border-box; }
+    body {
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        background: linear-gradient(135deg, #eef2f3, #dfe9f3);
+        color: #333;
+        padding: 20px;
+        display: flex;
+        justify-content: center;
+        min-height: 100vh;
+    }
+    .container {
+        background: #fff;
+        padding: 30px;
+        border-radius: 14px;
+        box-shadow: 0 6px 20px rgba(0,0,0,0.12);
+        max-width: 560px;
+        width: 100%;
+    }
+    h2 { text-align: center; color: #2c3e50; margin-bottom: 5px; }
+    p.subtitle { text-align: center; color: #7f8c8d; font-size: 14px; margin-bottom: 20px; }
+
+    .toggle-row { display: flex; justify-content: center; gap: 8px; margin-bottom: 20px; }
+    .toggle-row button {
+        flex: none; width: auto; padding: 6px 14px; font-size: 13px;
+        background: #ecf0f1; color: #34495e; border-radius: 20px;
+    }
+    .toggle-row button.active { background: #2980b9; color: #fff; }
+
+    .etf-card {
+        border: 1px solid #e1e6ea; border-radius: 10px; padding: 15px; margin-bottom: 15px;
+        background: #fbfcfd;
+    }
+    .etf-card h3 { margin: 0 0 10px 0; font-size: 15px; color: #2c3e50; display: flex; justify-content: space-between; align-items: center; }
+    .etf-card h3 .live-dot { width: 8px; height: 8px; border-radius: 50%; background: #ccc; display: inline-block; margin-right: 6px; }
+    .etf-card h3 .live-dot.on { background: #27ae60; box-shadow: 0 0 5px #27ae60; }
+
+    .lock-btn {
+        width: auto; padding: 4px 10px; font-size: 12px; border-radius: 14px;
+        background: #ecf0f1; color: #7f8c8d; font-weight: 600; border: 1px solid #dfe4e6;
+    }
+    .lock-btn.locked { background: #fdecea; color: #c0392b; border-color: #f3c6c0; }
+    .lock-btn:hover { opacity: 0.85; }
+    input.field-locked { background: #f4f5f6; color: #999; cursor: not-allowed; }
+
+    .field-row { display: flex; gap: 10px; margin-bottom: 10px; }
+    .field-row .input-group { flex: 1; margin-bottom: 0; }
+
+    .input-group { margin-bottom: 15px; }
+    label { display: block; font-weight: 600; margin-bottom: 5px; color: #34495e; font-size: 13px; }
+    input[type="number"], input[type="text"] {
+        width: 100%; padding: 9px; border: 1px solid #ccc; border-radius: 6px; font-size: 15px;
+    }
+    input:focus { outline: none; border-color: #2980b9; box-shadow: 0 0 0 3px rgba(41,128,185,0.15); }
+
+    .fetch-btn {
+        width: auto; white-space: nowrap; padding: 9px 12px; font-size: 13px;
+        background-color: #16a085; margin-top: 0;
+    }
+    .fetch-btn:hover { background-color: #1abc9c; }
+    .fetch-btn:disabled { background-color: #bdc3c7; cursor: not-allowed; }
+
+    .value-line { font-size: 13px; color: #555; margin-top: 6px; }
+    .value-line b { color: #2c3e50; }
+    .value-line b.pnl-pos { color: #27ae60; }
+    .value-line b.pnl-neg { color: #c0392b; }
+    .refresh-note { font-size: 11px; color: #888; text-align: center; margin-top: 8px; }
+    .fetch-status { font-size: 11px; margin-top: 4px; min-height: 14px; }
+    .fetch-status.ok { color: #27ae60; }
+    .fetch-status.err { color: #c0392b; }
+
+    .btn-row { display: flex; gap: 10px; margin-top: 10px; }
+    button {
+        width: 100%; padding: 12px; background-color: #2980b9; color: white;
+        border: none; border-radius: 6px; font-size: 15px; font-weight: bold;
+        cursor: pointer; transition: background 0.2s;
+    }
+    button:hover { background-color: #3498db; }
+    button.secondary { background-color: #95a5a6; }
+    button.secondary:hover { background-color: #7f8c8d; }
+
+    .result-box { margin-top: 25px; padding: 15px; border-radius: 8px; background-color: #f8f9fa; display: none; }
+
+    .alert { padding: 10px; border-radius: 6px; font-weight: bold; text-align: center; margin-bottom: 15px; }
+    .alert.green { background-color: #d4edda; color: #155724; }
+    .alert.red { background-color: #f8d7da; color: #721c24; }
+
+    .bar-wrap {
+        margin: 15px 0; height: 28px; border-radius: 14px; overflow: hidden;
+        display: flex; box-shadow: inset 0 1px 3px rgba(0,0,0,0.15); position: relative;
+    }
+    .bar-n50 { background: #2980b9; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 12px; font-weight: 600; transition: width 0.4s; }
+    .bar-nn50 { background: #e67e22; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 12px; font-weight: 600; transition: width 0.4s; }
+
+    .legend { display: flex; justify-content: center; gap: 20px; font-size: 12px; margin-bottom: 10px; color: #555; }
+    .legend span::before { content: "●"; margin-right: 4px; }
+    .legend .l1::before { color: #2980b9; }
+    .legend .l2::before { color: #e67e22; }
+
+    .stat-row {
+        display: flex; justify-content: space-between; margin-bottom: 8px;
+        font-size: 14px; border-bottom: 1px dashed #bdc3c7; padding-bottom: 5px;
+    }
+    .stat-row span.bold { font-weight: 600; color: #2c3e50; }
+
+    .qty-summary {
+        display: flex; justify-content: space-between; background: #fff8ec;
+        border: 1px solid #f1d9a8; border-radius: 6px; padding: 8px 12px; margin-bottom: 10px;
+        font-size: 12px; color: #7a5c00;
+    }
+
+    #actionSteps { margin-top: 15px; font-weight: bold; color: #d35400; text-align: center; }
+
+    .trigger-box {
+        margin-top: 15px; background: #e8f4f8; padding: 12px; border-left: 4px solid #3498db;
+        border-radius: 4px; font-size: 13px; line-height: 1.6;
+    }
+
+    .history-box { margin-top: 20px; }
+    .history-box h4 { margin-bottom: 8px; color: #34495e; font-size: 14px; }
+
+    .backup-box { margin-top: 18px; padding: 15px; border-radius: 10px; background: #f8f9fa; border: 1px solid #e1e6ea; }
+    .backup-box h4 { margin: 0 0 8px 0; font-size: 14px; color: #34495e; }
+    .backup-box .backup-sub { font-weight: normal; font-size: 11px; color: #999; }
+
+    .cloud-box { margin-top: 18px; padding: 15px; border-radius: 10px; background: #eef6f9; border: 1px solid #cfe4ec; }
+    .cloud-box h4 { margin: 0 0 10px 0; font-size: 14px; color: #1b5e6d; }
+    .cloud-connect-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+    .cloud-connect-row input {
+        flex: 1; min-width: 140px; padding: 8px; border: 1px solid #b9d6de; border-radius: 6px; font-size: 13px;
+    }
+    .cloud-btn {
+        width: auto; padding: 8px 12px; font-size: 12px; background: #16a085; white-space: nowrap;
+    }
+    .cloud-btn:hover { background: #1abc9c; }
+    .cloud-btn.secondary-cloud { background: #95a5a6; }
+    .cloud-btn.secondary-cloud:hover { background: #7f8c8d; }
+    .cloud-code-badge { background: #fff; padding: 6px 10px; border-radius: 6px; font-size: 12px; border: 1px solid #cfe4ec; }
+    .cloud-status { font-size: 12px; color: #888; }
+    .cloud-status.ok { color: #16a085; font-weight: 600; }
+    .cloud-status.err { color: #c0392b; font-weight: 600; }
+    .backup-item {
+        display: flex; justify-content: space-between; align-items: center; font-size: 12px;
+        padding: 7px 9px; background: #fff; border: 1px solid #eee; border-radius: 5px; margin-bottom: 5px; color: #555;
+    }
+    .backup-item .b-info { display: flex; flex-direction: column; }
+    .backup-item .b-info span.d { color: #999; font-size: 11px; }
+    .backup-restore {
+        font-size: 12px; color: #fff; cursor: pointer; background: #2980b9;
+        padding: 6px 12px; border-radius: 6px; white-space: nowrap; margin-left: 10px;
+        font-weight: 600; flex-shrink: 0;
+    }
+    .backup-restore:hover { background: #3498db; }
+    .backup-item { flex-wrap: wrap; gap: 6px; }
+    .backup-actions { display: flex; justify-content: space-between; margin-top: 8px; }
+    .backup-link { font-size: 11px; color: #2980b9; cursor: pointer; text-decoration: underline; }
+    .backup-link.danger { color: #c0392b; }
+
+    .backup-quick-row { display: flex; gap: 8px; margin-bottom: 10px; }
+    .quick-restore-btn, .file-restore-btn {
+        flex: 1; text-align: center; font-size: 12px; padding: 8px 10px; border-radius: 6px;
+        border: 1px solid #cfe0ea; background: #eaf3fa; color: #2980b9; font-weight: 600;
+        cursor: pointer; display: flex; align-items: center; justify-content: center;
+    }
+    .quick-restore-btn:hover, .file-restore-btn:hover { background: #d9ebf7; }
+    .history-item {
+        display: flex; justify-content: space-between; font-size: 12px;
+        padding: 6px 8px; background: #f4f7f6; border-radius: 4px; margin-bottom: 4px;
+        color: #555;
+    }
+    .history-item span.d { color: #999; }
+    .clear-history { font-size: 11px; color: #c0392b; cursor: pointer; text-decoration: underline; margin-top: 4px; display: inline-block; }
+
+    .drift-label { text-align: center; font-size: 12px; color: #888; margin-top: -8px; margin-bottom: 12px; }
+
+    .note-box { font-size: 11px; color: #888; margin-top: 10px; line-height: 1.5; }
+
+    @media (max-width: 420px) {
+        .container { padding: 18px; }
+        .field-row { flex-direction: column; }
+    }
+</style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Portfolio Rebalancer</h2>
+    <p class="subtitle" id="subtitleText">65% Nifty 50 | 35% Nifty Next 50 (5% Drift Rule)</p>
+
+    <div class="toggle-row" id="driftToggle">
+        <button data-drift="3" onclick="setDrift(3)">3% Band</button>
+        <button data-drift="5" class="active" onclick="setDrift(5)">5% Band</button>
+        <button data-drift="7" onclick="setDrift(7)">7% Band</button>
+    </div>
+
+    <!-- Nifty 50 ETF Card -->
+    <div class="etf-card">
+        <h3><span><span class="live-dot" id="dotN50"></span>Nifty 50 ETF</span><button class="lock-btn" id="lockBtnN50" onclick="toggleLock('N50')">🔓 Tap to Lock</button></h3>
+        <div class="field-row">
+            <div class="input-group">
+                <label>Symbol (NSE)</label>
+                <input type="text" id="symN50" value="NIFTYBEES">
+            </div>
+            <div class="input-group">
+                <label>Units Held</label>
+                <input type="number" id="qtyN50" placeholder="e.g. 300" inputmode="decimal">
+            </div>
+        </div>
+        <div class="field-row">
+            <div class="input-group">
+                <label>Avg Buy Price (₹)</label>
+                <input type="number" id="avgN50" placeholder="e.g. 200.00" inputmode="decimal">
+            </div>
+            <div class="input-group">
+                <label>Price per Unit (₹)</label>
+                <input type="number" id="priceN50" placeholder="e.g. 216.50" inputmode="decimal">
+            </div>
+            <div class="input-group" style="flex: 0 0 auto; align-self: flex-end;">
+                <button class="fetch-btn" onclick="fetchPrice('N50')">⟳ Fetch Live</button>
+            </div>
+        </div>
+        <div class="value-line">Value: <b id="valN50">₹0</b></div>
+        <div class="value-line" id="pnlLineN50">Invested: <b>₹0</b> &nbsp;|&nbsp; PNL: <b>₹0 (0.0%)</b></div>
+        <div class="fetch-status" id="statusN50"></div>
+    </div>
+
+    <!-- Nifty Next 50 ETF Card -->
+    <div class="etf-card">
+        <h3><span><span class="live-dot" id="dotNN50"></span>Nifty Next 50 ETF</span><button class="lock-btn" id="lockBtnNN50" onclick="toggleLock('NN50')">🔓 Tap to Lock</button></h3>
+        <div class="field-row">
+            <div class="input-group">
+                <label>Symbol (NSE)</label>
+                <input type="text" id="symNN50" value="JUNIORBEES">
+            </div>
+            <div class="input-group">
+                <label>Units Held</label>
+                <input type="number" id="qtyNN50" placeholder="e.g. 400" inputmode="decimal">
+            </div>
+        </div>
+        <div class="field-row">
+            <div class="input-group">
+                <label>Avg Buy Price (₹)</label>
+                <input type="number" id="avgNN50" placeholder="e.g. 62.00" inputmode="decimal">
+            </div>
+            <div class="input-group">
+                <label>Price per Unit (₹)</label>
+                <input type="number" id="priceNN50" placeholder="e.g. 68.20" inputmode="decimal">
+            </div>
+            <div class="input-group" style="flex: 0 0 auto; align-self: flex-end;">
+                <button class="fetch-btn" onclick="fetchPrice('NN50')">⟳ Fetch Live</button>
+            </div>
+        </div>
+        <div class="value-line">Value: <b id="valNN50">₹0</b></div>
+        <div class="value-line" id="pnlLineNN50">Invested: <b>₹0</b> &nbsp;|&nbsp; PNL: <b>₹0 (0.0%)</b></div>
+        <div class="fetch-status" id="statusNN50"></div>
+    </div>
+
+    <div class="btn-row">
+        <button onclick="fetchBothThenCalculate()">⟳ Fetch Both &amp; Check</button>
+        <button class="secondary" onclick="resetForm()">Reset</button>
+    </div>
+    <div class="btn-row">
+        <button onclick="calculate()">Check Status (use entered prices)</button>
+    </div>
+
+    <div class="result-box" id="resultBox">
+        <div id="statusAlert" class="alert"></div>
+
+        <div class="qty-summary">
+            <span id="qtySummaryN50">Nifty 50: 0 units</span>
+            <span id="qtySummaryNN50">Next 50: 0 units</span>
+        </div>
+
+        <div class="legend">
+            <span class="l1">Nifty 50</span>
+            <span class="l2">Next 50</span>
+        </div>
+        <div class="bar-wrap">
+            <div class="bar-n50" id="barN50">0%</div>
+            <div class="bar-nn50" id="barNN50">0%</div>
+        </div>
+        <div class="drift-label" id="driftLabel"></div>
+
+        <div class="stat-row">
+            <span>Total Portfolio Value:</span>
+            <span class="bold" id="totalVal">₹0</span>
+        </div>
+        <div class="stat-row">
+            <span>Total Invested:</span>
+            <span class="bold" id="totalInvested">₹0</span>
+        </div>
+        <div class="stat-row">
+            <span>Total PNL:</span>
+            <span class="bold" id="totalPnl">₹0 (0.0%)</span>
+        </div>
+        <div class="stat-row">
+            <span>Current Ratio:</span>
+            <span class="bold" id="currentRatio">0% : 0%</span>
+        </div>
+        <div class="stat-row" style="border-bottom:none;">
+            <span>Drift from Target:</span>
+            <span class="bold" id="driftVal">0%</span>
+        </div>
+        <div class="refresh-note" id="lastRefreshed"></div>
+
+        <div id="actionSteps"></div>
+
+        <div class="trigger-box">
+            <strong>Upcoming Rebalance Triggers:</strong><br>
+            (Assuming Nifty 50 value stays at current level)<br><br>
+            📈 <b>Upper Trigger (Gain):</b> If Next 50 value reaches <span style="color:green; font-weight:bold;" id="upTrigger">₹0</span> (<span id="upPct">40</span>% allocation).<br><br>
+            📉 <b>Lower Trigger (Drop):</b> If Next 50 value falls to <span style="color:red; font-weight:bold;" id="downTrigger">₹0</span> (<span id="downPct">30</span>% allocation).
+        </div>
+
+        <div class="history-box">
+            <h4>Recent Checks</h4>
+            <div id="historyList"></div>
+            <span class="clear-history" onclick="clearHistory()">Clear history</span>
+        </div>
+    </div>
+
+    <div class="note-box">
+        ⚠️ Live price NSE se fetch hoti hai — agar aapka browser/network block kare (CORS ya firewall), to price manually daal ke "Check Status" button use karein. Price fetch ke baad bhi manually edit kar sakte hain.
+    </div>
+
+    <div class="cloud-box">
+        <h4>☁ Cloud Sync <span class="backup-sub">(access from any device with an Access Code)</span></h4>
+
+        <div id="cloudConnectRow" class="cloud-connect-row">
+            <input type="text" id="accessCodeInput" placeholder="Access Code (e.g. p8x2k9)">
+            <button class="cloud-btn" onclick="connectCloud()">Connect</button>
+            <button class="cloud-btn secondary-cloud" onclick="generateAccessCode()">Generate New</button>
+        </div>
+
+        <div id="cloudConnectedRow" class="cloud-connect-row" style="display:none;">
+            <span class="cloud-code-badge">Code: <b id="cloudCodeDisplay"></b></span>
+            <span class="backup-link" onclick="copyAccessCode()">Copy</span>
+            <span class="backup-link danger" onclick="disconnectCloud()">Disconnect</span>
+        </div>
+
+        <div class="cloud-status" id="cloudStatus">Not connected — data sirf is device/browser pe hai.</div>
+        <div class="note-box" style="margin-top:8px;">
+            Access Code ek password jaisa hai — jisko bhi ye code doge wo tumhara data dekh/badal sakta hai. Doosre device pe same code "Connect" karne se data turant sync ho jayega (real-time).
+        </div>
+    </div>
+
+    <div class="backup-box">
+        <h4>📦 Backups <span class="backup-sub">(auto-saved on every page load, last 10 kept)</span></h4>
+
+        <div class="backup-quick-row">
+            <button class="quick-restore-btn" onclick="restoreLastBackup()">⏮ Restore Last Backup</button>
+            <label class="file-restore-btn">
+                ⬆ Restore from File
+                <input type="file" accept="application/json,.json" id="backupFileInput" onchange="restoreFromFile(event)" hidden>
+            </label>
+        </div>
+
+        <div id="backupList"></div>
+        <div class="backup-actions">
+            <span class="backup-link" onclick="downloadBackups()">⬇ Download all as file</span>
+            <span class="backup-link danger" onclick="clearBackups()">Clear backups</span>
+        </div>
+    </div>
+</div>
+
+<!-- Firebase (compat SDK) for cloud sync -->
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+
+<script>
+    const TARGET_NN50 = 0.35;
+
+    // ---------- Firebase / Cloud Sync ----------
+    const firebaseConfig = {
+        apiKey: "AIzaSyDv6MS25IBSfvkTQX3QOlaYuzOWmU6UWnc",
+        authDomain: "my-etf-tracker-b7656.firebaseapp.com",
+        projectId: "my-etf-tracker-b7656",
+        storageBucket: "my-etf-tracker-b7656.firebasestorage.app",
+        messagingSenderId: "608474783532",
+        appId: "1:608474783532:web:52c4bc664c046fd3f71689"
+    };
+    let fbApp = null, db = null, cloudUnsub = null;
+    let applyingRemoteUpdate = false; // guards against write-loop when a snapshot triggers a save
+    let cloudSaveTimer = null;
+
+    function initFirebase() {
+        try {
+            fbApp = firebase.initializeApp(firebaseConfig);
+            db = firebase.firestore();
+            return true;
+        } catch (e) {
+            console.error('Firebase init failed', e);
+            return false;
+        }
+    }
+
+    const CLOUD_COLLECTION = 'etf_rebalancer_portfolios';
+    const CLOUD_STATE_FIELD_IDS = ['symN50','qtyN50','avgN50','priceN50','symNN50','qtyNN50','avgNN50','priceNN50'];
+
+    function getAccessCode() {
+        return S.get('rebal_accessCode') || '';
+    }
+
+    function setCloudStatus(text, ok) {
+        const el = document.getElementById('cloudStatus');
+        if (!el) return;
+        el.innerText = text;
+        el.className = 'cloud-status' + (ok === true ? ' ok' : ok === false ? ' err' : '');
+    }
+
+    function collectCloudState() {
+        const state = { updatedAt: Date.now() };
+        CLOUD_STATE_FIELD_IDS.forEach(id => { state[id] = document.getElementById(id).value || ''; });
+        state.driftBand = driftBand;
+        state.lockedN50 = isLocked('N50');
+        state.lockedNN50 = isLocked('NN50');
+        state.history = JSON.parse(S.get('rebal_history') || '[]');
+        state.backups = loadBackups();
+        return state;
+    }
+
+    function applyCloudState(state) {
+        applyingRemoteUpdate = true;
+        CLOUD_STATE_FIELD_IDS.forEach(id => {
+            const val = state[id] || '';
+            document.getElementById(id).value = val;
+            S.set('rebal_' + id, val);
+        });
+        if (state.driftBand) { driftBand = state.driftBand; S.set('rebal_drift', driftBand); }
+        S.set('rebal_lockedN50', state.lockedN50 ? '1' : '0');
+        S.set('rebal_lockedNN50', state.lockedNN50 ? '1' : '0');
+        if (Array.isArray(state.history)) S.set('rebal_history', JSON.stringify(state.history));
+        if (Array.isArray(state.backups)) S.set('rebal_backups', JSON.stringify(state.backups));
+
+        setDrift(driftBand, false);
+        applyLockState('N50'); applyLockState('NN50');
+        renderHistory();
+        renderBackups();
+        updateValueLine('N50'); updateValueLine('NN50');
+
+        const qtyN50 = parseFloat(document.getElementById('qtyN50').value) || 0;
+        const qtyNN50 = parseFloat(document.getElementById('qtyNN50').value) || 0;
+        if (qtyN50 > 0 || qtyNN50 > 0) calculate();
+
+        applyingRemoteUpdate = false;
+    }
+
+    function saveToCloudDebounced() {
+        if (!db || !getAccessCode() || applyingRemoteUpdate) return;
+        clearTimeout(cloudSaveTimer);
+        cloudSaveTimer = setTimeout(() => writeToCloud(), 600);
+    }
+
+    async function writeToCloud() {
+        const code = getAccessCode();
+        if (!db || !code) return;
+        try {
+            setCloudStatus('Syncing…');
+            await db.collection(CLOUD_COLLECTION).doc(code).set(collectCloudState(), { merge: true });
+            const time = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            setCloudStatus(`☁ Synced at ${time}`, true);
+        } catch (e) {
+            console.error('Cloud save failed', e);
+            setCloudStatus('Cloud save fail hui — network check karein.', false);
+        }
+    }
+
+    function subscribeCloud(code) {
+        if (cloudUnsub) { cloudUnsub(); cloudUnsub = null; }
+        cloudUnsub = db.collection(CLOUD_COLLECTION).doc(code).onSnapshot(doc => {
+            if (doc.exists) {
+                applyCloudState(doc.data());
+                const time = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                setCloudStatus(`☁ Connected — last update ${time}`, true);
+            }
+        }, err => {
+            console.error('Cloud listener error', err);
+            setCloudStatus('Cloud connection me error aayi.', false);
+        });
+    }
+
+    async function connectCloud() {
+        const input = document.getElementById('accessCodeInput');
+        let code = (input.value || '').trim();
+        if (!code) { alert('Pehle ek Access Code likho ya generate karo.'); return; }
+        if (!db && !initFirebase()) { alert('Firebase load nahi ho paaya. Internet check karein.'); return; }
+
+        S.set('rebal_accessCode', code);
+        setCloudStatus('Connecting…');
+
+        try {
+            const docRef = db.collection(CLOUD_COLLECTION).doc(code);
+            const snap = await docRef.get();
+            if (snap.exists) {
+                // Existing cloud data found for this code — pull it down.
+                applyCloudState(snap.data());
+            } else {
+                // New code — push current local state up as the starting point.
+                await docRef.set(collectCloudState());
+            }
+            subscribeCloud(code);
+            document.getElementById('cloudConnectRow').style.display = 'none';
+            document.getElementById('cloudConnectedRow').style.display = 'flex';
+            document.getElementById('cloudCodeDisplay').innerText = code;
+        } catch (e) {
+            console.error('Cloud connect failed', e);
+            setCloudStatus('Connect fail hua — code ya internet check karein.', false);
+        }
+    }
+
+    function disconnectCloud() {
+        if (cloudUnsub) { cloudUnsub(); cloudUnsub = null; }
+        S.remove('rebal_accessCode');
+        setCloudStatus('Disconnected — data sirf is device pe hai.');
+        document.getElementById('cloudConnectRow').style.display = 'flex';
+        document.getElementById('cloudConnectedRow').style.display = 'none';
+        document.getElementById('accessCodeInput').value = '';
+    }
+
+    function generateAccessCode() {
+        const code = 'p' + Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4);
+        document.getElementById('accessCodeInput').value = code;
+    }
+
+    function copyAccessCode() {
+        const code = getAccessCode();
+        if (!code) return;
+        navigator.clipboard?.writeText(code).then(() => {
+            setCloudStatus('Access Code copy ho gaya! Doosre device pe paste karke Connect karo.', true);
+        }).catch(() => {});
+    }
+    // ---------- End Firebase / Cloud Sync ----------
+
+
+    // Safe storage wrapper — some hosts/iframes block or quota-limit localStorage.
+    // All calls are wrapped so a storage failure never breaks the calculator.
+    const memoryStore = {}; // in-memory fallback, used whenever localStorage is blocked/unavailable
+    const S = {
+        get(key) {
+            try { return localStorage.getItem(key); }
+            catch (e) { return Object.prototype.hasOwnProperty.call(memoryStore, key) ? memoryStore[key] : null; }
+        },
+        set(key, val) {
+            memoryStore[key] = val; // always keep the in-memory copy in sync
+            try { localStorage.setItem(key, val); } catch (e) { /* storage unavailable, memory fallback already set */ }
+        },
+        remove(key) {
+            delete memoryStore[key];
+            try { localStorage.removeItem(key); } catch (e) { /* ignore */ }
+        }
+    };
+
+    let driftBand = parseInt(S.get('rebal_drift')) || 5;
+
+    const fields = {
+        N50:  { sym: 'symN50',  qty: 'qtyN50',  avg: 'avgN50',  price: 'priceN50',  val: 'valN50',  dot: 'dotN50',  status: 'statusN50', pnl: 'pnlLineN50', lockBtn: 'lockBtnN50' },
+        NN50: { sym: 'symNN50', qty: 'qtyNN50', avg: 'avgNN50', price: 'priceNN50', val: 'valNN50', dot: 'dotNN50', status: 'statusNN50', pnl: 'pnlLineNN50', lockBtn: 'lockBtnNN50' }
+    };
+
+    const LOCK_PIN = '0009';
+
+    function isLocked(key) {
+        return S.get('rebal_locked' + key) === '1';
+    }
+
+    function applyLockState(key) {
+        const f = fields[key];
+        const locked = isLocked(key);
+        const qtyEl = document.getElementById(f.qty);
+        const avgEl = document.getElementById(f.avg);
+        const btn = document.getElementById(f.lockBtn);
+
+        qtyEl.readOnly = locked;
+        avgEl.readOnly = locked;
+        qtyEl.classList.toggle('field-locked', locked);
+        avgEl.classList.toggle('field-locked', locked);
+        btn.classList.toggle('locked', locked);
+        btn.innerText = locked ? '🔒 Locked — tap to unlock' : '🔓 Tap to Lock';
+    }
+
+    function toggleLock(key) {
+        const locked = isLocked(key);
+        if (locked) {
+            const entered = prompt('Units/Avg badalne ke liye 4-digit PIN daalein:');
+            if (entered === null) return; // cancelled
+            if (entered !== LOCK_PIN) {
+                alert('Galat PIN! Fields locked rahenge.');
+                return;
+            }
+            S.set('rebal_locked' + key, '0');
+        } else {
+            S.set('rebal_locked' + key, '1');
+        }
+        applyLockState(key);
+        saveToCloudDebounced();
+    }
+
+
+    window.addEventListener('DOMContentLoaded', () => {
+        ['symN50','qtyN50','avgN50','priceN50','symNN50','qtyNN50','avgNN50','priceNN50'].forEach(id => {
+            const saved = S.get('rebal_' + id);
+            if (saved !== null) document.getElementById(id).value = saved;
+        });
+        ['symN50','qtyN50','avgN50','priceN50','symNN50','qtyNN50','avgNN50','priceNN50'].forEach(id => {
+            const el = document.getElementById(id);
+            el.addEventListener('input', () => {
+                S.set('rebal_' + id, el.value);
+                updateValueLine('N50'); updateValueLine('NN50');
+                saveToCloudDebounced();
+            });
+            // Flush to cloud immediately when the user leaves a field, instead of
+            // waiting for the debounce — avoids losing an edit if the page is
+            // refreshed right after typing (before the debounce timer fires).
+            el.addEventListener('blur', () => {
+                clearTimeout(cloudSaveTimer);
+                writeToCloud();
+            });
+        });
+
+        // Best-effort final flush before the page unloads/refreshes, so any
+        // edit still sitting in the debounce window doesn't get lost.
+        window.addEventListener('beforeunload', () => {
+            clearTimeout(cloudSaveTimer);
+            if (db && getAccessCode() && !applyingRemoteUpdate) writeToCloud();
+        });
+        setDrift(driftBand, false);
+        applyLockState('N50'); applyLockState('NN50');
+        renderHistory();
+        updateValueLine('N50'); updateValueLine('NN50');
+
+        // Take a backup snapshot of the restored state, every time the page loads.
+        takeBackupSnapshot();
+        renderBackups();
+
+        // Auto-fetch live prices every time the page loads / is refreshed.
+        autoFetchOnLoad();
+
+        // If a cloud Access Code was saved earlier, auto-connect to it.
+        const savedCode = getAccessCode();
+        if (savedCode && initFirebase()) {
+            document.getElementById('accessCodeInput').value = savedCode;
+            connectCloud();
+        }
+    });
+
+    // ---------- Backup system ----------
+    const BACKUP_FIELD_IDS = ['symN50','qtyN50','avgN50','priceN50','symNN50','qtyNN50','avgNN50','priceNN50'];
+
+    function loadBackups() {
+        try { return JSON.parse(S.get('rebal_backups') || '[]'); } catch (e) { return []; }
+    }
+
+    function takeBackupSnapshot() {
+        const snapshot = { ts: Date.now() };
+        BACKUP_FIELD_IDS.forEach(id => {
+            snapshot[id] = document.getElementById(id).value || '';
+        });
+        snapshot.driftBand = driftBand;
+
+        // Skip saving an empty/duplicate-of-latest snapshot so the list doesn't
+        // fill up with identical blank backups on repeated loads.
+        const hasData = snapshot.qtyN50 || snapshot.avgN50 || snapshot.priceN50 ||
+                         snapshot.qtyNN50 || snapshot.avgNN50 || snapshot.priceNN50;
+        if (!hasData) return;
+
+        let backups = loadBackups();
+        const latest = backups[0];
+        const isSameAsLatest = latest && BACKUP_FIELD_IDS.every(id => latest[id] === snapshot[id]) && latest.driftBand === snapshot.driftBand;
+        if (isSameAsLatest) return;
+
+        backups.unshift(snapshot);
+        backups = backups.slice(0, 10); // keep only the last 10
+        S.set('rebal_backups', JSON.stringify(backups));
+    }
+
+    function renderBackups() {
+        const backups = loadBackups();
+        const list = document.getElementById('backupList');
+        if (!backups.length) {
+            list.innerHTML = '<div style="font-size:12px; color:#999;">Koi backup nahi hai abhi.</div>';
+            return;
+        }
+        list.innerHTML = backups.map((b, i) => {
+            const dt = new Date(b.ts);
+            const dateStr = dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+            const timeStr = dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+            const totalQty = (parseFloat(b.qtyN50) || 0) + (parseFloat(b.qtyNN50) || 0);
+            return `<div class="backup-item">
+                <div class="b-info">
+                    <span>${b.symN50 || '-'}: ${b.qtyN50 || 0} units @ ₹${b.priceN50 || 0} · ${b.symNN50 || '-'}: ${b.qtyNN50 || 0} units @ ₹${b.priceNN50 || 0}</span>
+                    <span class="d">${dateStr}, ${timeStr}</span>
+                </div>
+                <span class="backup-restore" onclick="restoreBackup(${i})">↺ Restore</span>
+            </div>`;
+        }).join('');
+    }
+
+    function restoreBackup(index) {
+        const backups = loadBackups();
+        const b = backups[index];
+        if (!b) return;
+        if (!confirm(`Ye backup (${new Date(b.ts).toLocaleString('en-IN')}) restore karna hai? Current values overwrite ho jayengi.`)) return;
+
+        // Unlock fields first if locked, so restore can actually write values.
+        ['N50', 'NN50'].forEach(key => { S.set('rebal_locked' + key, '0'); applyLockState(key); });
+
+        BACKUP_FIELD_IDS.forEach(id => {
+            const val = b[id] || '';
+            document.getElementById(id).value = val;
+            S.set('rebal_' + id, val);
+        });
+        if (b.driftBand) setDrift(b.driftBand, false);
+
+        updateValueLine('N50'); updateValueLine('NN50');
+        const qtyN50 = parseFloat(document.getElementById('qtyN50').value) || 0;
+        const qtyNN50 = parseFloat(document.getElementById('qtyNN50').value) || 0;
+        if (qtyN50 > 0 || qtyNN50 > 0) calculate();
+    }
+
+    function restoreLastBackup() {
+        const backups = loadBackups();
+        if (!backups.length) { alert('Koi backup nahi hai abhi.'); return; }
+        restoreBackup(0);
+    }
+
+    async function restoreFromFile(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        try {
+            const text = await file.text();
+            const parsed = JSON.parse(text);
+            let imported = Array.isArray(parsed) ? parsed : [parsed];
+            imported = imported.filter(b => b && typeof b === 'object' && ('qtyN50' in b || 'qtyNN50' in b));
+
+            if (!imported.length) {
+                alert('File me valid backup data nahi mila. Sahi JSON backup file select karein.');
+                return;
+            }
+
+            // Merge imported backups with existing ones, newest first, capped at 10.
+            let backups = loadBackups();
+            backups = imported.concat(backups).slice(0, 10);
+            S.set('rebal_backups', JSON.stringify(backups));
+            renderBackups();
+
+            if (confirm(`File se ${imported.length} backup(s) import ho gaye. Sabse latest wala abhi restore karna hai?`)) {
+                restoreBackup(0);
+            }
+        } catch (err) {
+            alert('File read/parse fail hui — sahi JSON backup file select karein.');
+        } finally {
+            event.target.value = ''; // allow re-selecting the same file later
+        }
+    }
+
+
+    function clearBackups() {
+        if (!confirm('Saare backups delete karne hain?')) return;
+        S.remove('rebal_backups');
+        renderBackups();
+    }
+
+    function downloadBackups() {
+        const backups = loadBackups();
+        if (!backups.length) { alert('Koi backup nahi hai abhi.'); return; }
+        const blob = new Blob([JSON.stringify(backups, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `etf_rebalancer_backups_${new Date().toISOString().slice(0,10)}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+    // ---------- End backup system ----------
+
+    async function autoFetchOnLoad() {
+        // Just refresh prices silently on load — don't pop the "enter units"
+        // alert if the user hasn't filled in quantities yet.
+        await Promise.all([fetchPrice('N50'), fetchPrice('NN50')]);
+        const qtyN50 = parseFloat(document.getElementById('qtyN50').value) || 0;
+        const qtyNN50 = parseFloat(document.getElementById('qtyNN50').value) || 0;
+        if (qtyN50 > 0 || qtyNN50 > 0) calculate();
+    }
+
+    // Auto-refresh live prices every 10 seconds while the page stays open.
+    const REFRESH_INTERVAL = 10 * 1000;
+    setInterval(() => {
+        autoFetchOnLoad();
+    }, REFRESH_INTERVAL);
+
+    function updateValueLine(key) {
+        const f = fields[key];
+        const qty = parseFloat(document.getElementById(f.qty).value) || 0;
+        const price = parseFloat(document.getElementById(f.price).value) || 0;
+        const avg = parseFloat(document.getElementById(f.avg).value) || 0;
+
+        const currentVal = qty * price;
+        document.getElementById(f.val).innerText = formatMoney(currentVal);
+
+        const pnlEl = document.getElementById(f.pnl);
+        if (qty > 0 && avg > 0) {
+            const invested = qty * avg;
+            const pnl = currentVal - invested;
+            const pnlPct = invested ? (pnl / invested) * 100 : 0;
+            const cls = pnl >= 0 ? 'pnl-pos' : 'pnl-neg';
+            const sign = pnl >= 0 ? '+' : '-';
+            pnlEl.innerHTML = `Invested: <b>${formatMoney(invested)}</b> &nbsp;|&nbsp; PNL: <b class="${cls}">${sign}${formatMoney(Math.abs(pnl))} (${sign}${Math.abs(pnlPct).toFixed(2)}%)</b>`;
+        } else {
+            pnlEl.innerHTML = `Invested: <b>₹0</b> &nbsp;|&nbsp; PNL: <b>Avg buy price daalein</b>`;
+        }
+    }
+
+    async function fetchPrice(key) {
+        const f = fields[key];
+        const symbol = (document.getElementById(f.sym).value || '').trim().toUpperCase();
+        const statusEl = document.getElementById(f.status);
+        const dotEl = document.getElementById(f.dot);
+        if (!symbol) { statusEl.className = 'fetch-status err'; statusEl.innerText = 'Symbol daalein pehle.'; return; }
+
+        statusEl.className = 'fetch-status'; statusEl.innerText = 'Fetching...';
+        dotEl.classList.remove('on');
+
+        const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}.NS`;
+
+        // Yahoo's endpoint has no CORS header for browser-origin requests, so a
+        // direct fetch() is blocked by the browser. We route through public
+        // CORS proxies instead, trying each in turn until one works.
+        const attempts = [
+            // Proxy 1: allorigins (returns raw response body)
+            { name: 'allorigins', run: async () => {
+                const res = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}`);
+                if (!res.ok) throw new Error('bad status ' + res.status);
+                return res.json();
+            }},
+            // Proxy 2: corsproxy.io
+            { name: 'corsproxy.io', run: async () => {
+                const res = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(yahooUrl)}`);
+                if (!res.ok) throw new Error('bad status ' + res.status);
+                return res.json();
+            }},
+            // Proxy 3: codetabs
+            { name: 'codetabs', run: async () => {
+                const res = await fetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(yahooUrl)}`);
+                if (!res.ok) throw new Error('bad status ' + res.status);
+                return res.json();
+            }},
+            // Proxy 4: thingproxy
+            { name: 'thingproxy', run: async () => {
+                const res = await fetch(`https://thingproxy.freeboard.io/fetch/${yahooUrl}`);
+                if (!res.ok) throw new Error('bad status ' + res.status);
+                return res.json();
+            }},
+            // Proxy 5: allorigins JSON-wrapped (fallback if /raw is unavailable)
+            { name: 'allorigins-get', run: async () => {
+                const res = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(yahooUrl)}`);
+                if (!res.ok) throw new Error('bad status ' + res.status);
+                const wrapper = await res.json();
+                return JSON.parse(wrapper.contents);
+            }}
+        ];
+
+        function withTimeout(promise, ms) {
+            return Promise.race([
+                promise,
+                new Promise((_, reject) => setTimeout(() => reject(new Error('timed out after ' + ms + 'ms')), ms))
+            ]);
+        }
+
+        let data = null, lastErr = null, triedNames = [];
+        for (const attempt of attempts) {
+            triedNames.push(attempt.name);
+            try {
+                data = await withTimeout(attempt.run(), 8000);
+                if (data?.chart?.result?.[0]?.meta?.regularMarketPrice) break;
+                data = null;
+                lastErr = new Error(attempt.name + ': no price in response');
+            } catch (err) {
+                lastErr = new Error(attempt.name + ': ' + err.message);
+            }
+        }
+
+        try {
+            const meta = data?.chart?.result?.[0]?.meta;
+            const price = meta?.regularMarketPrice;
+            if (!price) throw lastErr || new Error('Price not found in response');
+
+            document.getElementById(f.price).value = price.toFixed(2);
+            S.set('rebal_' + f.price, price.toFixed(2));
+            updateValueLine(key);
+
+            const time = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+            statusEl.className = 'fetch-status ok';
+            statusEl.innerText = `Live price ₹${price.toFixed(2)} fetched at ${time}`;
+            dotEl.classList.add('on');
+        } catch (err) {
+            statusEl.className = 'fetch-status err';
+            statusEl.innerText = `Live fetch fail hui (${triedNames.join(', ')} sab try kiye). Price manually daal dein.`;
+            console.warn('fetchPrice failed for', key, '- last error:', lastErr);
+            dotEl.classList.remove('on');
+        }
+    }
+
+    async function fetchBothThenCalculate() {
+        await Promise.all([fetchPrice('N50'), fetchPrice('NN50')]);
+        calculate();
+    }
+
+    function setDrift(val, recalc = true) {
+        driftBand = val;
+        S.set('rebal_drift', val);
+        document.querySelectorAll('#driftToggle button').forEach(b => {
+            b.classList.toggle('active', parseInt(b.dataset.drift) === val);
+        });
+        document.getElementById('subtitleText').innerText =
+            `65% Nifty 50 | 35% Nifty Next 50 (${val}% Drift Rule)`;
+        if (recalc && document.getElementById('resultBox').style.display === 'block') calculate();
+    }
+
+    function resetForm() {
+        // If either card is locked, require the PIN before wiping qty/avg data.
+        if (isLocked('N50') || isLocked('NN50')) {
+            const entered = prompt('Kuch fields locked hain. Reset karne ke liye PIN daalein:');
+            if (entered !== LOCK_PIN) {
+                if (entered !== null) alert('Galat PIN! Reset cancel ho gaya.');
+                return;
+            }
+        }
+        ['qtyN50','priceN50','avgN50','qtyNN50','priceNN50','avgNN50'].forEach(id => {
+            document.getElementById(id).value = '';
+            S.remove('rebal_' + id);
+        });
+        S.set('rebal_lockedN50', '0');
+        S.set('rebal_lockedNN50', '0');
+        applyLockState('N50'); applyLockState('NN50');
+        document.getElementById('resultBox').style.display = 'none';
+        document.getElementById('statusN50').innerText = '';
+        document.getElementById('statusNN50').innerText = '';
+        document.getElementById('dotN50').classList.remove('on');
+        document.getElementById('dotNN50').classList.remove('on');
+        updateValueLine('N50'); updateValueLine('NN50');
+        saveToCloudDebounced();
+    }
+
+    const formatMoney = (num) => "₹" + Math.round(num).toLocaleString('en-IN');
+
+    function calculate() {
+        const qtyN50 = parseFloat(document.getElementById('qtyN50').value) || 0;
+        const priceN50 = parseFloat(document.getElementById('priceN50').value) || 0;
+        const avgN50 = parseFloat(document.getElementById('avgN50').value) || 0;
+        const qtyNN50 = parseFloat(document.getElementById('qtyNN50').value) || 0;
+        const priceNN50 = parseFloat(document.getElementById('priceNN50').value) || 0;
+        const avgNN50 = parseFloat(document.getElementById('avgNN50').value) || 0;
+
+        const n50 = qtyN50 * priceN50;
+        const nn50 = qtyNN50 * priceNN50;
+
+        if (n50 === 0 && nn50 === 0) {
+            alert("Please enter units and price for at least one ETF!");
+            return;
+        }
+        if (qtyN50 < 0 || qtyNN50 < 0 || priceN50 < 0 || priceNN50 < 0) {
+            alert("Values can't be negative!");
+            return;
+        }
+
+        const total = n50 + nn50;
+        const n50_pct = total ? (n50 / total) * 100 : 0;
+        const nn50_pct = total ? (nn50 / total) * 100 : 0;
+
+        const target_nn50 = total * TARGET_NN50;
+        const upperBound = 35 + driftBand;
+        const lowerBound = 35 - driftBand;
+
+        document.getElementById('totalVal').innerText = formatMoney(total);
+        document.getElementById('currentRatio').innerText = `${n50_pct.toFixed(1)}% : ${nn50_pct.toFixed(1)}%`;
+
+        // Total invested & PNL (only counts ETFs where an avg buy price was entered)
+        const investedN50 = avgN50 > 0 ? qtyN50 * avgN50 : 0;
+        const investedNN50 = avgNN50 > 0 ? qtyNN50 * avgNN50 : 0;
+        const totalInvested = investedN50 + investedNN50;
+        const totalPnl = (avgN50 > 0 ? n50 - investedN50 : 0) + (avgNN50 > 0 ? nn50 - investedNN50 : 0);
+        const totalPnlPct = totalInvested ? (totalPnl / totalInvested) * 100 : 0;
+
+        document.getElementById('totalInvested').innerText = totalInvested > 0 ? formatMoney(totalInvested) : '—';
+        const pnlTotalEl = document.getElementById('totalPnl');
+        if (totalInvested > 0) {
+            const sign = totalPnl >= 0 ? '+' : '-';
+            pnlTotalEl.innerText = `${sign}${formatMoney(Math.abs(totalPnl))} (${sign}${Math.abs(totalPnlPct).toFixed(2)}%)`;
+            pnlTotalEl.style.color = totalPnl >= 0 ? '#27ae60' : '#c0392b';
+        } else {
+            pnlTotalEl.innerText = 'Avg buy price daalein';
+            pnlTotalEl.style.color = '#2c3e50';
+        }
+
+        const refTime = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        document.getElementById('lastRefreshed').innerText = `Prices last refreshed at ${refTime} · auto-refreshes every 10 sec`;
+        document.getElementById('qtySummaryN50').innerText = `Nifty 50: ${qtyN50.toLocaleString('en-IN')} units @ ₹${priceN50.toFixed(2)}`;
+        document.getElementById('qtySummaryNN50').innerText = `Next 50: ${qtyNN50.toLocaleString('en-IN')} units @ ₹${priceNN50.toFixed(2)}`;
+
+        const drift = nn50_pct - 35;
+        document.getElementById('driftVal').innerText = `${drift >= 0 ? '+' : ''}${drift.toFixed(1)}%`;
+
+        document.getElementById('barN50').style.width = n50_pct + '%';
+        document.getElementById('barN50').innerText = n50_pct >= 12 ? n50_pct.toFixed(0) + '%' : '';
+        document.getElementById('barNN50').style.width = nn50_pct + '%';
+        document.getElementById('barNN50').innerText = nn50_pct >= 12 ? nn50_pct.toFixed(0) + '%' : '';
+        document.getElementById('driftLabel').innerText = `Target band: ${lowerBound}% – ${upperBound}% (Next 50)`;
+
+        const alertBox = document.getElementById('statusAlert');
+        const actionBox = document.getElementById('actionSteps');
+        let statusText = '';
+
+        if (nn50_pct >= upperBound) {
+            alertBox.className = "alert red";
+            alertBox.innerText = "🚨 Rebalance Required! Next 50 is Overweight.";
+            const diffVal = nn50 - target_nn50;
+            const diffUnits = priceNN50 ? diffVal / priceNN50 : 0;
+            actionBox.innerHTML = `Action: Sell ${formatMoney(diffVal)} (~${diffUnits.toFixed(0)} units) of Next 50 and Buy Nifty 50.`;
+            statusText = 'Overweight (Sell Next 50)';
+        } else if (nn50_pct <= lowerBound) {
+            alertBox.className = "alert red";
+            alertBox.innerText = "🚨 Rebalance Required! Next 50 is Underweight.";
+            const diffVal = target_nn50 - nn50;
+            const diffUnits = priceNN50 ? diffVal / priceNN50 : 0;
+            actionBox.innerHTML = `Action: Sell ${formatMoney(target_nn50 - nn50 >= 0 ? (n50 - total*0.65) : 0)} of Nifty 50 and Buy ~${diffUnits.toFixed(0)} units (${formatMoney(diffVal)}) of Next 50.`;
+            statusText = 'Underweight (Buy Next 50)';
+        } else {
+            alertBox.className = "alert green";
+            alertBox.innerText = "✅ Portfolio is Balanced. No action needed.";
+            actionBox.innerHTML = "";
+            statusText = 'Balanced';
+        }
+
+        const upFrac = (35 + driftBand) / 100, downFrac = (35 - driftBand) / 100;
+        const triggerUp = (upFrac / (1 - upFrac)) * n50;
+        const triggerDown = (downFrac / (1 - downFrac)) * n50;
+
+        document.getElementById('upTrigger').innerText = formatMoney(triggerUp);
+        document.getElementById('downTrigger').innerText = formatMoney(triggerDown);
+        document.getElementById('upPct').innerText = (35 + driftBand);
+        document.getElementById('downPct').innerText = (35 - driftBand);
+
+        document.getElementById('resultBox').style.display = "block";
+
+        saveHistory(total, n50_pct, nn50_pct, statusText);
+        saveToCloudDebounced();
+    }
+
+    function saveHistory(total, n50_pct, nn50_pct, statusText) {
+        let hist = JSON.parse(S.get('rebal_history') || '[]');
+        hist.unshift({
+            date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+            total: Math.round(total),
+            ratio: `${n50_pct.toFixed(0)}:${nn50_pct.toFixed(0)}`,
+            status: statusText
+        });
+        hist = hist.slice(0, 5);
+        S.set('rebal_history', JSON.stringify(hist));
+        renderHistory();
+    }
+
+    function renderHistory() {
+        const hist = JSON.parse(S.get('rebal_history') || '[]');
+        const list = document.getElementById('historyList');
+        if (!hist.length) {
+            list.innerHTML = '<div style="font-size:12px; color:#999;">No history yet.</div>';
+            return;
+        }
+        list.innerHTML = hist.map(h =>
+            `<div class="history-item"><span class="d">${h.date}</span><span>${formatMoney(h.total)} · ${h.ratio} · ${h.status}</span></div>`
+        ).join('');
+    }
+
+    function clearHistory() {
+        S.remove('rebal_history');
+        renderHistory();
+    }
+</script>
+
+</body>
+</html>
