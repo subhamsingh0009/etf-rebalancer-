@@ -829,63 +829,44 @@
         statusEl.className = 'fetch-status'; statusEl.innerText = 'Fetching...';
         dotEl.classList.remove('on');
 
-        const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}.NS`;
+        const yahooPath = `/v8/finance/chart/${encodeURIComponent(symbol)}.NS`;
+        const yahooUrl = 'https://query1.finance.yahoo.com' + yahooPath;
+        const yahooUrl2 = 'https://query2.finance.yahoo.com' + yahooPath;
 
-        // Yahoo's endpoint has no CORS header for browser-origin requests, so a
-        // direct fetch() is blocked by the browser. We route through public
-        // CORS proxies instead, trying each in turn until one works.
-        const attempts = [
-            // Proxy 1: allorigins (returns raw response body)
-            { name: 'allorigins', run: async () => {
-                const res = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}`);
-                if (!res.ok) throw new Error('bad status ' + res.status);
-                return res.json();
-            }},
-            // Proxy 2: corsproxy.io
-            { name: 'corsproxy.io', run: async () => {
-                const res = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(yahooUrl)}`);
-                if (!res.ok) throw new Error('bad status ' + res.status);
-                return res.json();
-            }},
-            // Proxy 3: codetabs
-            { name: 'codetabs', run: async () => {
-                const res = await fetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(yahooUrl)}`);
-                if (!res.ok) throw new Error('bad status ' + res.status);
-                return res.json();
-            }},
-            // Proxy 4: thingproxy
-            { name: 'thingproxy', run: async () => {
-                const res = await fetch(`https://thingproxy.freeboard.io/fetch/${yahooUrl}`);
-                if (!res.ok) throw new Error('bad status ' + res.status);
-                return res.json();
-            }},
-            // Proxy 5: allorigins JSON-wrapped (fallback if /raw is unavailable)
-            { name: 'allorigins-get', run: async () => {
-                const res = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(yahooUrl)}`);
-                if (!res.ok) throw new Error('bad status ' + res.status);
-                const wrapper = await res.json();
-                return JSON.parse(wrapper.contents);
-            }}
-        ];
+        // OPTIONAL: paste your own Cloudflare Worker URL here (fastest + most reliable).
+        // Worker must accept ?symbol=NIFTYBEES and return Yahoo's JSON with CORS headers.
+        const WORKER_URL = '';
 
-        function withTimeout(promise, ms) {
-            return Promise.race([
-                promise,
-                new Promise((_, reject) => setTimeout(() => reject(new Error('timed out after ' + ms + 'ms')), ms))
-            ]);
-        }
-
-        let data = null, lastErr = null, triedNames = [];
-        for (const attempt of attempts) {
-            triedNames.push(attempt.name);
+        const getJson = async (url, unwrap) => {
+            const ctrl = new AbortController();
+            const t = setTimeout(() => ctrl.abort(), 4000);
             try {
-                data = await withTimeout(attempt.run(), 8000);
-                if (data?.chart?.result?.[0]?.meta?.regularMarketPrice) break;
-                data = null;
-                lastErr = new Error(attempt.name + ': no price in response');
-            } catch (err) {
-                lastErr = new Error(attempt.name + ': ' + err.message);
-            }
+                const res = await fetch(url, { signal: ctrl.signal });
+                if (!res.ok) throw new Error('status ' + res.status);
+                const j = await res.json();
+                const out = unwrap ? JSON.parse(j.contents) : j;
+                if (!out?.chart?.result?.[0]?.meta?.regularMarketPrice) throw new Error('no price');
+                return out;
+            } finally { clearTimeout(t); }
+        };
+
+        // All sources fire AT THE SAME TIME; the first valid price wins.
+        // (Before, they were tried one after another with long timeouts = slow.)
+        const attempts = [
+            ['corsproxy.io', () => getJson(`https://corsproxy.io/?url=${encodeURIComponent(yahooUrl)}`)],
+            ['allorigins', () => getJson(`https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}`)],
+            ['allorigins-get', () => getJson(`https://api.allorigins.win/get?url=${encodeURIComponent(yahooUrl2)}`, true)],
+            ['codetabs', () => getJson(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(yahooUrl)}`)],
+            ['cors.lol', () => getJson(`https://api.cors.lol/?url=${encodeURIComponent(yahooUrl)}`)]
+        ];
+        if (WORKER_URL) attempts.unshift(['worker', () => getJson(`${WORKER_URL}?symbol=${encodeURIComponent(symbol)}`)]);
+
+        const triedNames = attempts.map(a => a[0]);
+        let data = null, lastErr = null;
+        try {
+            data = await Promise.any(attempts.map(([n, run]) => run().catch(e => { throw new Error(n + ': ' + e.message); })));
+        } catch (agg) {
+            lastErr = agg.errors ? agg.errors[agg.errors.length - 1] : agg;
         }
 
         try {
