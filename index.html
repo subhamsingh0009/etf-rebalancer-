@@ -819,15 +819,24 @@
         }
     }
 
-    async function fetchPrice(key) {
+    const inFlight = {};
+    async function fetchPrice(key, silent = false) {
+        if (inFlight[key]) return;
+        inFlight[key] = true;
+        try { await fetchPriceInner(key, silent); } finally { inFlight[key] = false; }
+    }
+
+    async function fetchPriceInner(key, silent) {
         const f = fields[key];
         const symbol = (document.getElementById(f.sym).value || '').trim().toUpperCase();
         const statusEl = document.getElementById(f.status);
         const dotEl = document.getElementById(f.dot);
         if (!symbol) { statusEl.className = 'fetch-status err'; statusEl.innerText = 'Symbol daalein pehle.'; return; }
 
-        statusEl.className = 'fetch-status'; statusEl.innerText = 'Fetching...';
-        dotEl.classList.remove('on');
+        if (!silent) {
+            statusEl.className = 'fetch-status'; statusEl.innerText = 'Fetching...';
+            dotEl.classList.remove('on');
+        }
 
         const yahooPath = `/v8/finance/chart/${encodeURIComponent(symbol)}.NS`;
         const yahooUrl = 'https://query1.finance.yahoo.com' + yahooPath;
@@ -874,7 +883,10 @@
             const price = meta?.regularMarketPrice;
             if (!price) throw lastErr || new Error('Price not found in response');
 
-            document.getElementById(f.price).value = price.toFixed(2);
+            // In auto-refresh mode, never overwrite the box while the user is typing in it.
+            if (!(silent && document.activeElement === document.getElementById(f.price))) {
+                document.getElementById(f.price).value = price.toFixed(2);
+            }
             S.set('rebal_' + f.price, price.toFixed(2));
             updateValueLine(key);
 
@@ -883,12 +895,29 @@
             statusEl.innerText = `Live price ₹${price.toFixed(2)} fetched at ${time}`;
             dotEl.classList.add('on');
         } catch (err) {
+            if (silent) {
+                // Keep the last good price on screen; just note the refresh failed.
+                statusEl.className = 'fetch-status err';
+                statusEl.innerText = 'Auto-update fail hua, purana price dikh raha hai. Agli koshish 10 sec mein.';
+                return;
+            }
             statusEl.className = 'fetch-status err';
             statusEl.innerText = `Live fetch fail hui (${triedNames.join(', ')} sab try kiye). Price manually daal dein.`;
             console.warn('fetchPrice failed for', key, '- last error:', lastErr);
             dotEl.classList.remove('on');
         }
     }
+
+    // ---- Auto-refresh live prices every 10 seconds ----
+    const AUTO_REFRESH_MS = 10000;
+    function autoRefreshTick() {
+        if (document.hidden) return; // don't hit proxies while the tab is in the background
+        fetchPrice('N50', true);
+        fetchPrice('NN50', true);
+    }
+    setInterval(autoRefreshTick, AUTO_REFRESH_MS);
+    // Refresh immediately when the user comes back to the tab
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) autoRefreshTick(); });
 
     async function fetchBothThenCalculate() {
         await Promise.all([fetchPrice('N50'), fetchPrice('NN50')]);
